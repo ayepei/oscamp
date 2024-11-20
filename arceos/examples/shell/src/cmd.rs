@@ -1,7 +1,6 @@
 use std::fs::{self, File, FileType};
 use std::io::{self, prelude::*};
 use std::{string::String, vec::Vec};
-
 #[cfg(all(not(feature = "axstd"), unix))]
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 
@@ -27,6 +26,8 @@ const CMD_TABLE: &[(&str, CmdHandler)] = &[
     ("pwd", do_pwd),
     ("rm", do_rm),
     ("uname", do_uname),
+    ("rename",do_rename),
+    ("mv",do_mv),
 ];
 
 fn file_type_to_char(ty: FileType) -> char {
@@ -65,7 +66,45 @@ const fn file_perm_to_rwx(mode: u32) -> [u8; 9] {
     set!(8, b'r'); set!(7, b'w'); set!(6, b'x');
     perm
 }
-
+fn do_rename(args: &str){
+    let mut old_name="";
+    let mut new_name="";
+    for (i,name) in args.split_whitespace().enumerate() {
+        if i==0{
+            old_name=name;
+        }
+        else {
+            new_name=name;
+        }
+    }
+    if let Err(e) = fs::rename(old_name, new_name) {
+        print_err!("rename", e);
+    }
+}
+fn do_mv(args: &str){
+    let mut old_path="";
+    let mut new_path="";
+    for (i,name) in args.split_whitespace().enumerate() {
+        if i==0{
+            old_path=name;
+        }
+        else {
+            new_path=name;
+        }
+    }
+    //读取内容
+    let mut file = File::open(old_path).unwrap();
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+    let mut full_path = String::from(new_path);
+    full_path.push_str("/");
+    full_path.push_str(&old_path);
+    let a: &str=&full_path;
+    let _new_file=File::create(a).unwrap();
+    fs::write(a, contents).unwrap();
+    fs::remove_file(old_path).unwrap();    
+   
+}
 fn do_ls(args: &str) {
     let current_dir = std::env::current_dir().unwrap();
     let args = if args.is_empty() {
