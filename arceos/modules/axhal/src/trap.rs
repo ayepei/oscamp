@@ -43,3 +43,11 @@ macro_rules! handle_trap {
 pub(crate) fn handle_syscall(tf: &TrapFrame, syscall_num: usize) -> isize {
     SYSCALL[0](tf, syscall_num)
 }
+
+/// Call the external page handler.
+#[cfg(feature = "uspace")]
+pub(crate) fn handle_page_fault(va:VirtAddr, access_flags: MappingFlags, is_user: bool) -> bool {
+    warn!("N112{:?},{:?},{}",va,access_flags,is_user);
+    
+    PAGE_FAULT[0](va, access_flags,is_user)
+}

@@ -22,6 +22,9 @@ fn handle_page_fault(tf: &TrapFrame, mut access_flags: MappingFlags, is_user: bo
     }
     let vaddr = va!(stval::read());
     if !handle_trap!(PAGE_FAULT, vaddr, access_flags, is_user) {
+        warn!("11111");
+        crate::trap::handle_page_fault(vaddr,access_flags,is_user);
+        
         panic!(
             "Unhandled {} Page Fault @ {:#x}, fault_vaddr={:#x} ({:?}):\n{:#x?}",
             if is_user { "User" } else { "Supervisor" },
