@@ -1,6 +1,8 @@
 #![allow(dead_code)]
-
+use memory_addr:: VirtAddrRange;
 use core::ffi::{c_void, c_char, c_int};
+use core::ptr::null;
+use std::fs::File;
 use axhal::arch::TrapFrame;
 use axhal::trap::{register_trap_handler, SYSCALL};
 use axerrno::LinuxError;
@@ -8,7 +10,7 @@ use axtask::current;
 use axtask::TaskExtRef;
 use axhal::paging::MappingFlags;
 use arceos_posix_api as api;
-
+use axhal::mem::{PAGE_SIZE_4K, VirtAddr, MemoryAddr};
 const SYS_IOCTL: usize = 29;
 const SYS_OPENAT: usize = 56;
 const SYS_CLOSE: usize = 57;
@@ -19,9 +21,10 @@ const SYS_EXIT: usize = 93;
 const SYS_EXIT_GROUP: usize = 94;
 const SYS_SET_TID_ADDRESS: usize = 96;
 const SYS_MMAP: usize = 222;
-
+const APP_ENTRY: usize = 0x1000;
 const AT_FDCWD: i32 = -100;
-
+use axhal::mem::phys_to_virt;
+use std::io::{self, Read};
 /// Macro to generate syscall body
 ///
 /// It will receive a function which return Result<_, LinuxError> and convert it to
@@ -140,7 +143,43 @@ fn sys_mmap(
     fd: i32,
     _offset: isize,
 ) -> isize {
-    unimplemented!("no sys_mmap!");
+    let binding = axtask::current();
+    let mut uspace=binding.task_ext().aspace.lock();
+
+        
+    let mut buf = [0u8; 64];
+    let _=api::get_file_like(fd).unwrap().read(&mut buf);
+    
+    //如果为空，寻找一个空的虚拟地址
+    let start;
+    if addr.is_null(){
+        start=uspace.find_free_area(uspace.base(), length.align_up_4k(),VirtAddrRange::from_start_size(uspace.base(), uspace.end()-uspace.base()) ).unwrap();
+    }
+    else {
+        start=VirtAddr::from(addr as usize);
+    }
+    ax_println!("start: {:#x}", start);
+    //判断prot
+    let mapping_flags = MappingFlags::from(MmapProt::from_bits(prot).unwrap());
+    ax_println!("flag: {:#x}", mapping_flags);
+    //进行虚拟地址到物理地址映射
+    uspace.map_alloc(start.align_down_4k(), length.align_up_4k(), mapping_flags, true).unwrap();
+    //寻找物理地址
+    let (paddr, _, _) = uspace
+        .page_table()
+        .query(start.align_down_4k())
+        .unwrap_or_else(|_| panic!("Mapping failed for segment: {:#x}", APP_ENTRY));
+
+    ax_println!("paddr: {:#x}", paddr);
+    // //将文件的数据拷贝到物理地址上
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            buf.as_ptr(),
+            phys_to_virt(paddr).as_mut_ptr(),
+            length.align_up_4k(),
+        );
+    }
+    start.as_ptr() as isize
 }
 
 fn sys_openat(dfd: c_int, fname: *const c_char, flags: c_int, mode: api::ctypes::mode_t) -> isize {
