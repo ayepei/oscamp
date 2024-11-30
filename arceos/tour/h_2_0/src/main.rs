@@ -12,15 +12,15 @@ use axerrno::{ax_err_type, AxResult};
 use memory_addr::VirtAddr;
 use alloc::string::String;
 use std::fs::File;
+use std::os::arceos::modules::axlog::ax_println;
 use riscv_vcpu::RISCVVCpu;
 use riscv_vcpu::AxVCpuExitReason::NestedPageFault;
-
+use crate::std::io::Read;
 const VM_ASPACE_BASE: usize = 0x0;
 const VM_ASPACE_SIZE: usize = 0x7fff_ffff_f000;
 const PHY_MEM_START: usize = 0x8000_0000;
 const PHY_MEM_SIZE: usize = 0x100_0000;
 const KERNEL_BASE: usize = 0x8020_0000;
-
 use axmm::AddrSpace;
 use axhal::paging::MappingFlags;
 
@@ -60,15 +60,24 @@ fn main() {
                     assert_eq!(addr, 0x2200_0000.into(), "Now we ONLY handle pflash#2.");
                     let mapping_flags = MappingFlags::from_bits(0xf).unwrap();
                     // Passthrough-Mode
-                    let _ = aspace.map_linear(addr, addr.as_usize().into(), 4096, mapping_flags);
+                    // let _ = aspace.map_linear(addr, addr.as_usize().into(), 4096, mapping_flags);
 
-                    /*
+                    
                     // Emulator-Mode
                     // Pretend to load file to fill buffer.
-                    let buf = "pfld";
+                    //将pflash#2读到buf中。
+                    use std::io::{BufReader, Read};
+                    let pflash_name="/sbin/pflash.img";
                     aspace.map_alloc(addr, 4096, mapping_flags, true);
-                    aspace.write(addr, buf.as_bytes());
-                    */
+                    let (mut image_file, image_size) = open_image_file(pflash_name).unwrap();
+                    let image_load_regions = aspace
+                        .translated_byte_buffer(addr, 4096)
+                        .expect("Failed to translate kernel image load address");
+                    let mut file = BufReader::new(image_file);
+
+                    for buffer in image_load_regions {
+                        file.read_exact(buffer);
+                    }   
                 },
                 _ => {
                     panic!("Unhandled VM-Exit: {:?}", exit_reason);
